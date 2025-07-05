@@ -23,8 +23,8 @@
 
     // メイン実行.
     const main = function () {
-        // TLS 接続の証明書検証を無効にセット(これはclient接続用？).
-        //process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
+        // TLS 接続の証明書検証を無効にセット(HttpsClient接続用).
+        process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
 
         let conf = loadJson("./conf/" + CONF_FILE);
         if (conf == null) {
@@ -298,18 +298,12 @@
                     const state = cres.statusCode;
                     // イベント11超えでメモリーリーク警告が出るのでこれを排除.
                     cres.setMaxListeners(0);
-                    // レスポンスステータスが 300 から 399 で
-                    // locationヘッダが存在する場合は
-                    // リダイレクトURLを http:// に置き換える.
-                    if (state >= 300 && state <= 399 &&
-                        useString(cres.headers["location"])) {
-                        // httpモードの場合はレスポンスヘッダの
-                        // location(urlProtocol)を書き換える.
-                        let url = cres.headers["location"];
-                        if (url.startsWith("https://")) {
-                            url = "http://" + url.substring(8);
-                            cres.headers["location"] = url;
-                        }
+                    if (state >= 300 && state <= 499) {
+                        // https結果のステータスが300系、400系の場合
+                        // httpでアクセスしてみる.
+                        _closeHttpClient(cres);
+                        _sendHttpClient(conn, sres);
+                        return;
                     }
                     // httpClientのresponseをサーバレスポンスに設定する.
                     sres.writeHead(cres.statusCode, cres.headers);
@@ -320,6 +314,7 @@
                     console.log("# [state: " + 500 + "]: url: " + conn.url);
                     console.error(e);
                     // 503エラーを返却.
+                    _closeHttpClient(cres);
                     _errorResponse(sres, 503);
                 }
             });
@@ -359,6 +354,26 @@
                     const state = cres.statusCode;
                     // イベント11超えでメモリーリーク警告が出るのでこれを排除.
                     cres.setMaxListeners(0);
+                    // レスポンスステータスが 300 から 399 で
+                    // locationヘッダが存在する場合は
+                    // リダイレクトURLを http:// に置き換える.
+                    if (state >= 300 && state <= 399 &&
+                        useString(cres.headers["location"])) {
+                        // locationがhttps://の場合は書き換えを行う.
+                        let redirectUrl = cres.headers["location"];
+                        if (redirectUrl.startsWith("https://")) {
+                            redirectUrl = "http://" + url.substring(8);
+                            cres.headers["location"] = redirectUrl;
+                        }
+                        // リダイレクトURL内容がリクエストURLと同じ場合.
+                        // (無限リダイレクト状態の場合.)
+                        if (redirectUrl == url) {
+                            // 404エラーを返却(存在しない的な感じ).
+                            _closeHttpClient(cres);
+                            _errorResponse(sres, 404);
+                            return;
+                        }
+                    }
                     // httpClientのresponseをサーバレスポンスに設定する.
                     sres.writeHead(cres.statusCode, cres.headers);
                     // bodyをpipeでセット.
@@ -368,6 +383,7 @@
                     console.log("# [state: " + 500 + "]: url: " + url);
                     console.error(e);
                     // 503エラーを返却.
+                    _closeHttpClient(cres);
                     _errorResponse(sres, 503);
                 }
             });
@@ -392,6 +408,13 @@
             // 503エラーを返却.
             _errorResponse(sres, 503);
         }
+    }
+
+    // httpCLientをクローズ.
+    const _closeHttpClient = function (res) {
+        try {
+            res.end();
+        } catch (e) { }
     }
 
     // エラー処理.
