@@ -1,0 +1,9 @@
+{
+    "//": "HTTPプロトコル受付",
+    "httpPort": 3128,
+    "httpBindAddr": null,
+    "//": "http or https serverの keepAliveタイムアウト(ミリ秒)",
+    "keepAliveTimeout": null,
+    "//": "http or https serverの 受信タイムアウト(ミリ秒)",
+    "TIMEOUT": null
+}
